@@ -1,3 +1,5 @@
-<embed src="/assets/img/ChaseCoopersResume.pdf" type="application/pdf" width="100%" height="800px" />
+# **[System.Security.Principal.WindowsIdentity]::GetCurrent().ChaseCooper**
 
-*[View or download my Resume](/assets/img/ChaseCoopersResume.pdf)*
+More information about me
+
+<embed src="/assets/img/ChaseCoopersResume.pdf" type="application/pdf" width="100%" height="800px" /> 

@@ -13,7 +13,7 @@ author: Chase Cooper
 ###############################################
 
 navbar-links:
-  Resume: "aboutme.md"
+  whoami: "aboutme.md"
   #Resources:
     #- Beautiful Jekyll: "https://beautifuljekyll.com"
     #- Learn markdown: "https://www.markdowntutorial.com/"

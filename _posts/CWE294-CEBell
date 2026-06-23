@@ -1,13 +1,13 @@
 ---
 layout: post
-title: Sample blog post to learn markdown tips
-subtitle: There's lots to learn!
+title: CWE-294 (Authentication Bypass by Capture-Replay)
+subtitle: Cloudedge Bell 24T RF Vulnerability
 gh-repo: daattali/beautiful-jekyll
 gh-badge: [star, fork, follow]
 tags: [test]
 comments: true
 mathjax: true
-author: Bill Smith
+author: Chase Cooper
 ---
 
 {: .box-success}

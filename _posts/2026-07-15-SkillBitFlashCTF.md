@@ -12,20 +12,20 @@ A few weeks ago I participated in SkillBits June 2026 Flash CTF. I had work off 
 Knowing I would be spending the next week and a half on vacation, I wanted to complete the remaining challenges on the trip to keep me busy during downtime. Here are my write ups for all of the challenges, starting from the easiest, working to the hardest.
 
 
-### **Exposure (*100pts*):**
+### **Exposure (*100 pts*):**
 **Forensics**
 *A coworker dropped a photo (20251023_141508.jpg) into the team chat, posted straight off their phone. The picture's nothing special, but they weren't thinking about what else rode along with it.*
 
 As expected being the first challenge, this was very simple. My initial thought was to run this picture through `exiftool` to see if the exifdata had been stripped or was still present. Here is the provided image:
 
-<img width="3024" height="4032" alt="20251023_141508" src="https://github.com/user-attachments/assets/6fb6c21d-f129-4eb2-aea4-6e4996d15daa" />
+<img width="800" height="700" alt="20251023_141508" src="https://github.com/user-attachments/assets/6fb6c21d-f129-4eb2-aea4-6e4996d15daa" />
 
 By running `exiftool` on the image, I was able to extract the flag embedded within the exifdata of the file:
 
 <img width="738" height="507" alt="image" src="https://github.com/user-attachments/assets/724d3ff3-3215-4962-9ac9-4b500e8a188b" />
 
 
-### **Key Evidence (*150pts*):**
+### **Key Evidence (*150 pts*):**
 **Forensics**
 *Our DLP team pulled a USB capture off the kiosk that staff use to unlock the records terminal. The only device on the bus was the keyboard. We need to know exactly what got typed at it.*
 
@@ -43,7 +43,7 @@ Running the extracted hex through this USB HID Keyboard decoder found on github 
 <img width="883" height="130" alt="image" src="https://github.com/user-attachments/assets/5cdc6083-91fd-41a7-b943-5c913bdabdb8" />
 
 
-### **Flash Sale (*200*):**
+### **Flash Sale (*200 pts*):**
 **Web Exploitation**
 *FashCart just dropped their Founders Edition Hoodie. It's members-only, it's $200, and every one ships with an exclusive promo code we want.*
 *The catch: a fresh account starts with a $0.00 balance, and the only gift card floating around (FLASH50) is worth $50 and is limited to one redemption per account. Get yourself a hoodie.*
@@ -73,7 +73,7 @@ With $300 now sitting in the wallet, I bypassed the intended $50 coupon limitati
 <img width="876" height="471" alt="image" src="https://github.com/user-attachments/assets/6ad7e78a-4079-418e-b40f-736e0cb39a3c" />
 
 
-### **Cogwork (*250pts*):**
+### **Cogwork (*250 pts*):**
 **Reverse Engineering**
 *The vault keypad doesn't run normal code. It hands your access code to a little clockwork engine inside the firmware and only opens if the gears line up. Recover the code it's waiting for.*
 
@@ -160,7 +160,7 @@ Now all I had left was to invert the check. I wrote a python script to take the 
 
 ---
 
-### **Residual (*350pts*):**
+### **Residual (*350 pts*):**
 **Forensics**
 *A workstation was hit by a suspicious software update and several public documents were left encrypted. The response team preserved a small filesystem triage package from the host, including encrypted files and low-level filesystem evidence. Reconstruct what happened, identify what can still be trusted from the artifacts, and recover the data the attacker tried to lock away.*
 

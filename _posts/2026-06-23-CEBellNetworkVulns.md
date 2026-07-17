@@ -10,44 +10,54 @@ author: Chase Cooper
 ---
 
 ## Overview
-I’ve been researching the security posture of the CloudEdge Bell 24T Smart Doorbell for a few months shy of a year, taking it on as my first IoT vulnerability research project. It has been an incredibly rewarding experience, not just for the findings themselves, but for the sheer volume of low-level networking and hardware knowledge learned along the way. This research has covered the full wireless communication stack (including both network communications & sub-GHz RF signal reverse engineering), and hardware components (such as exposed UART/debug interfaces & SPI flash chips). Several vulnerabilities have been uncovered during this process (some currently pending CVE assignment), but the first critical flaw I found was the firmware's complete lack of TLS certificate validation (CWE-295).
+I’ve been researching the security posture of the CloudEdge Bell 24T Smart Doorbell for a few months shy of a year, taking it on as my first IoT vulnerability research project. It has been an incredibly rewarding experience, not just for the findings themselves, but for the sheer volume of low-level networking and hardware knowledge learned along the way. This research has covered the full wireless communication stack (including both network communications & sub-GHz RF signal reverse engineering), and hardware components (such as exposed UART/debug interfaces & SPI flash chips). Several vulnerabilities have been uncovered during this process, with some currently pending CVE assignment. 
 
-Before going deeper into CWE-295, I want to break down the device's network communication lifecycle. I established a privileged network position by using my Raspberry Pi as an access point (AP), forcing the doorbell to route all traffic through the Pi. I ran many `tshark` captures utilizing L2/L3 filters to isolate traffic between the doorbell and the mobile app across both local and external interactions (restarts, motion triggers, two-way audio, device unpairing, etc.). 
+I began this research project focusing on the network communication stack, here is a technical breakdown of my process and findings.
 
-The easiest way to explain my findings from many rough hours of network traffic analysis is to break the communication methods up into three distinct planes:
+The first thing I did was establish a privileged network position to be able to capture and analyze the packets. I used a Raspberry Pi set up as an access (AP) point using `hostapd`, `dnsmasq`, and some `iptables` rules. This forced all inbound and outbound doorbell traffic through a controllable bridge for interception and analysis.
 
-**Control Plane:** This plane consists of a TLS v1.2/1.3 tunnel which is responsible for handling critical actions to and from the cloud (e.g., Delete Device, alter functionality, initiate a live video feed).
+I wrote a quick bash script to force a static IP onto `wlan0`, bring the interface up cleanly, enable IPv4 kernel forwarding, and configure `iptables` to masquerade traffic from the AP to the Pi’s upstream (WLAN) connection (`eth0`).
 
-**Media Plane (P2P TUTK):** After a user initiates a live view from the app, the doorbell bypasses NAT/Firewalls using ICE (Interactive Connectivity Establishment) and STUN/TURN techniques to facilitate low-latency video streaming through through ThroughTek's (TUTK’s) P2P servers. The video/audio is streamed through a flood of bidirectional UDP packets. During the P2P handshake, the doorbell broadcasts session negotiation data in plaintext JSON (revealing a constant listener port, static device ID (UUID), and dynamic Session IDs).
+<img width="953" height="456" alt="image" src="https://github.com/user-attachments/assets/69c39df6-3351-47f9-9aff-b00da8e3999f" />
+It also includes commented-out rules to quickly establish the transparent proxy, redirecting all port 80/443 traffic to `mitmproxy`.
 
-**Data Plane:** When I triggered the motion sensor or rang the doorbell, the device took a picture and sent the image to a cloud OSS bucket, which is then passed to the mobile phone in an alert/notification, all happening in unencrypted HTTP POST & PUT requests. By extracting and analysing the requests, I discovered the device transmits an x-oss-callback header when motion is detected. Decoding this Base64 string presented a JSON payload exposing the userID, deviceID (same UUID as before), and event metadata. Worse, the request included an x-oss-security-token (which an attacker could use to access the user's cloud storage bucket), as well as all data passing through (e.g., alerts, images)). On top of all of that, the server does not validate that the x-Ca-nonce header when sending an alert from ringing the doorbell was really only used once, meaning the replay prevention parameters are completely useless allowing an attacker to edit and transmit this alert at will.
+With the AP running, I ran multiple `tshark` captures utilizing L2/L3 filters to isolate traffic between the doorbell and the mobile app across local (same WiFi) and external (e.g., cellular) interactions. Some examples being restarts, motion triggers, two-way audio, device unpairing & deletion, etc.). 
+
+The easiest way to explain my findings from some rough hours of manual packet analysis (as well as the use of some custom Python scripts found on my GitHub) is to break the important protocols used and the security flaws involved into two planes:
+
+### Media/Data Plane
+When you open the app to check your doorbell camera, several things happen to get the video to your screen:
+1. When the phone and doorbell are on different private networks protected by firewalls and NAT and they need to connect directly, the system uses ICE (a framework for finding the best connection path). It uses STUN servers to help the devices discover their own public IP addresses, and if a direct connection fails, it uses TURN servers to relay the video traffic.
+2. Before the video starts playing, the app and the doorbell have to negotiate a session. During this phase, the doorbell broadcasts configuration data across the network in plaintext JSON (unencrypted, easily readable text). This data includes a static/permanent Device ID (UUID), static UDP listener port, and dynamic Session IDs (SID). The SID's are low-entropy temporary codes for the current video session. Once the devices agree on the terms, the doorbell streams the video and audio to your phone using a flood of UDP packets. 
+4. Because the handshake happens in unencrypted plaintext and the Session IDs are easily guessable, an attacker can capture the permanent IDs and session IDs (or brute force the SID since the low-entropy factor) to access the live video feed, trigger the siren, or overwhelm the device with traffic (a local Denial of Service attack).
+
+When I triggered the motion sensor or rang the doorbell, the device took a picture and sent the image to a cloud OSS bucket (a data container that media gets dumped to), happening in unencrypted HTTP POST & PUT requests. The picture is then fetched and combined with some other data to be passed to the mobile app in an alert/phone notification. By extracting and analyzing the requests, I discovered the device transmits an x-oss-callback header when motion is detected. Decoding this Base64 string presented a JSON payload exposing the userID, deviceID (same UUID as before), and event metadata. Worse, the request included an x-oss-security-token (temporary Security Token Service (STS) credentials). 
 
 <img width="1231" height="515" alt="image" src="https://github.com/user-attachments/assets/edca7bfe-7fc4-401c-9f27-9911a8654227" />
 <img width="1252" height="243" alt="image" src="https://github.com/user-attachments/assets/f63a802d-1262-43a1-965e-6eb2a930dced" />
 
-I wrote and used these two custom Python tools to extract the capture data into formats I could programmatically query to use alongside wireshark for easier analysis (the code is on my GitHub):
-1. The first script converts raw `.mitm` capture files into JSON. By using the `mitmproxy.io` library on the `.mitm` file to iterate through the intercepted flows, it extracts the raw state data, and decodes the byte streams into UTF-8 strings. Writing the parsed dictionary out to a formatted JSON file allows me to grep across large chunks of traffic for specific API endpoints or authorization headers.
-2. The second is a bulk parser that extracts specific protocol fields from `.pcapng` captures and outputs them to CSV I can easily drop into Timeline Explorer. The script recursively searches the working directory for `.pcapng` files and executes a `tshark` subprocess against each one. It utilizes a predefined list of display filters to rip out specific data points across L2/L3/L4 (DNS, HTTP, TLS, STUN/WebRTC).
+On top of all of this, the server does not validate that the x-Ca-nonce header was really only used once, meaning the replay prevention parameters the developers implemented are completely useless. All of these factors present some pretty serious security concerns, such as a malicious actor's ability to read and write to the user’s cloud storage bucket, as well as all data passing through (e.g., alerts, images).
 
----
+### Control Plane
+This plane consists of a TLS v1.2/1.3 tunnel which is responsible for handling critical actions to and from the cloud (e.g., Delete Device, alter functionality, initiate a live video feed).
 
-Now, narrowing back in on the control plane, since I didn’t have root access (yet) to drop a custom root CA into the doorbell’s firmware, I wanted to test how the security of its validation actually was. I presented it with my own self-signed certificate to see if it would blindly accept the connection or drop it. To execute this, I deployed a transparent proxy (a proxy invisible to both the device and cloud server) on the Pi, and performed a **Man-in-the-Middle (MitM) Attack**. By weaponizing the routing capabilities of a Raspberry Pi to work alongside `mitmproxy`, I was able to capture, analyze, manipulate, and replay network traffic entering and leaving the doorbell.
+While the cloud server responsible for the IoT-to-cloud control plane utilizes custom HMAC headers (`X-Ca-Key`, `X-Ca-Nonce`), the backend fails to strictly validate timestamp and nonce uniqueness. This cryptographic failure allows an attacker to capture and replay API requests to manipulate the device state.
 
-I utilized `hostapd` paired with `dnsmasq` (alongside some `iptables` routing rules) to convert the Pi's Wi-Fi card on the `wlan0` interface into a wireless access point. This architecture allowed for full scale network traffic manipulation. With the Pi operating as a fully functional router, the next step was dynamically intercepting specific traffic from the doorbell. To do so, I deployed `mitmproxy` in transparent mode, listening on port 8081:
+Because hardware identifiers (UUIDs) heavily dictate access controls, the leakage of these identifiers could (in theory - this has not been tested to confirm) open pathways for cross-account manipulation (**IDOR**), such as unauthorized binding requests or state modifications. Additionally, the `x-oss-callback` header (which instructs the cloud on where to send event notifications) is constructed entirely client-side. Modifying this header forces the OSS infrastructure to act as a proxy, potentially exposing internal networks via Server-Side Request Forgery (**SSRF**).
+
+##### Exploiting CWE-295 (Improper Certificate Validation)
+
+Since I didn’t have root access (yet) to drop a custom root CA into the doorbell’s firmware, I wanted to test how the security of its validation actually was. I presented it with my own self-signed certificate to see if it would blindly accept the connection or drop it. To execute this, I deployed a transparent proxy (a proxy invisible to both the device and cloud server) on the Pi, and performed a **Man-in-the-Middle (MitM) Attack**. By weaponizing the routing capabilities of a Raspberry Pi to work alongside `mitmproxy`, I was able to capture, analyze, manipulate, and replay network traffic entering and leaving the doorbell.
+
+ zdeployed `mitmproxy` in transparent mode, listening on port 8081:
 
 `mitmproxy --mode transparent --showhost -p 8081 -k`
 
-When the doorbell attempts to establish a secure TLS connection with its backend server, `mitmproxy` intercepts the request, dynamically generates a forged TLS certificate for the requested domain, and presents it to the device. If the device accepts, `mitmproxy` then establishes its own secure connection to the actual cloud server, masquerading as the doorbell. Because `mitmproxy` sits in the middle acting as the termination point for both TLS tunnels, it can decrypt the traffic from the doorbell using the forged certificate, log the plaintext payload, re-encrypt it using the legitimate cloud server's certificate, and forward it along. Neither the device nor the server is aware of the interception.
+In a vulnerable environment, when the doorbell attempts to establish a TLS connection with its backend server, `mitmproxy` intercepts the request, dynamically generates a forged TLS certificate for the requested domain, and presents it to the device. If the device accepts, `mitmproxy` then establishes its own secure connection to the actual cloud server, masquerading as the doorbell. Because `mitmproxy` sits in the middle acting as the termination point for both TLS tunnels, it can decrypt the traffic from the doorbell using the forged certificate, log the plaintext payload, re-encrypt it using the legitimate cloud server's certificate, and forward it along. Neither the device nor the server is aware of the interception.
 
 To force the traffic into the proxy rather than allowing it to route normally through the upstream interface, I configured more `iptables` rules to redirect all incoming traffic destined for port 443 to the proxy's listening port:
 
 `sudo iptables -t nat -A PREROUTING -i wlan0 -p tcp --dport 443 -j REDIRECT --to-port 8081`
-
-If you have ever tried to set up an AP on a Raspberry Pi, you know that NetworkManager loves to interfere with `hostapd` on who gets to own `wlan0`. To ensure the environment deployed cleanly every time without conflicts, I wrote a deployment script:
-
-<img width="953" height="456" alt="image" src="https://github.com/user-attachments/assets/69c39df6-3351-47f9-9aff-b00da8e3999f" />
-
-This script forces a static IP onto `wlan0` and brings the interface up cleanly. It enables IPv4 kernel forwarding and configures `iptables` to masquerade outbound traffic from the AP through to the Pi's upstream primary connection (`eth0`). It also includes commented-out rules to quickly establish the transparent proxy, redirecting all port 80/443 traffic to `mitmproxy`.
 
 Here is a visual representation of the routing logic:
 
@@ -59,12 +69,12 @@ The doorbell **did not drop the connection** upon receiving the proxy's untruste
 
 <img width="1051" height="376" alt="image" src="https://github.com/user-attachments/assets/8e6f7bee-6e46-43b9-a85b-4db06b8cd2f3" />
 
----
-
-## Recommended Mitigation
-To resolve CWE-295 on this device, the vendor needs to implement the following:
-* **Strict Certificate Validation:** The firmware must be updated to enforce strict validation of the SSL/TLS certificate chain against a trusted root CA store prior to establishing the tunnel.
-* **Certificate Pinning:** Implement public key or certificate pinning for all communications between the physical device and the backend APIs. The device should be configured to explicitly reject arbitrary, self-signed, or dynamically generated proxy certificates.
+### Conclusion & Mitigations
+The network stack section of the research successfully identified critical security flaws spanning the network layers and the cloud API infrastructure. To resolve these architectural flaws, the vendor needs to implement the following controls:
+- **Certificate Pinning:** Hardcode the server certificate's public key directly into the device firmware to completely neutralize SSL/TLS bypass via untrusted self-signed certificates.
+- **Secure Transport:** Deprecate plain HTTP communications entirely.
+- **Cryptographic Validation:** Implement strict hash-based validation (e.g., SHA-256) for all file uploads and enforce a strict window for request timestamps to neutralize payload substitution and replay attacks.
+- **Local Network Hardening:** Deprecate plaintext UDP broadcasting of static UUIDs in favor of localized encryption (DTLS) and require mutual authentication for all localized UDP hardware commands.
 
 
 

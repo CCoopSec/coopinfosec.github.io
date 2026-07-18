@@ -2,7 +2,6 @@
 layout: post
 title: SkillBit June Flash CTF Writeup
 gh-repo: chezzuhhh.github.io
-tags: [test]
 comments: true
 mathjax: true
 author: Chase Cooper

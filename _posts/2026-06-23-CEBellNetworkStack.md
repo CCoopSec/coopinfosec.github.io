@@ -3,7 +3,6 @@ layout: post
 title: Security Posture of the CloudEdge Bell 24T Network Stack
 subtitle: Exploitation of Insecure Communication & Certificate Validation with Cloud Backend & Mobile App
 gh-repo: chezzuhhh.github.io
-tags: [test]
 comments: true
 mathjax: true
 author: Chase Cooper
@@ -76,6 +75,3 @@ The network stack section of the research successfully identified critical secur
 - **Cryptographic Validation:** Implement strict hash-based validation (e.g., SHA-256) for all file uploads and enforce a strict window for request timestamps to neutralize payload substitution and replay attacks.
 - **Local Network Hardening:** Deprecate plaintext UDP broadcasting of static UUIDs in favor of localized encryption (DTLS) and require mutual authentication for all localized UDP hardware commands.
 
-
-
-```

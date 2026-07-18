@@ -64,12 +64,12 @@ Here is a visual representation of the routing logic:
 
 After setting up the MitM environment, I manually connected the doorbell to the AP's SSID and triggered various actions from the paired mobile app. 
 
-The doorbell **did not drop the connection** upon receiving the proxy's untrusted, self-signed certificate. The TLS handshake completed successfully without triggering any certificate pinning or chain validation failure routines. Decrypted HTTPS/TLS traffic to and from the doorbell was entirely accessible.
+The doorbell **did not drop the connection** upon receiving the proxy's untrusted, self-signed certificate. The TLS handshake completed successfully without triggering any certificate pinning or chain validation failure routines. Decrypted HTTPS/TLS traffic to and from the doorbell was entirely accessible. Here are some captured flows in `mitmproxy`.
 
 <img width="1051" height="376" alt="image" src="https://github.com/user-attachments/assets/8e6f7bee-6e46-43b9-a85b-4db06b8cd2f3" />
 
 ### Conclusion & Mitigations
-The network stack section of the research successfully identified critical security flaws spanning the network layers and the cloud API infrastructure. To resolve these architectural flaws, the vendor needs to implement the following controls:
+The network stack section of the research successfully identified critical security flaws spanning the network layers and the cloud API infrastructure. To resolve these architectural flaws, the vendor needs to implement the following:
 - **Certificate Pinning:** Hardcode the server certificate's public key directly into the device firmware to completely neutralize SSL/TLS bypass via untrusted self-signed certificates.
 - **Secure Transport:** Deprecate plain HTTP communications entirely.
 - **Cryptographic Validation:** Implement strict hash-based validation (e.g., SHA-256) for all file uploads and enforce a strict window for request timestamps to neutralize payload substitution and replay attacks.

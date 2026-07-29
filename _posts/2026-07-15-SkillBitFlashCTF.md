@@ -59,7 +59,7 @@ Since sequential attacks failed, I pivoted to testing how the server handled con
 
 The target is the `/redeem` API endpoint. The request process was straightforward, it transmitted the `FLASH50` code to be validated against the account's redemption history.
 
-Because the coupon validation checks if the code has already been used, I wanted to test for the presence of a potential Time-of-Check to Time-of-Use (TOCTOU) vulnerability. If multiple requests arrive at the exact same time, the server might check the database for all of them simultaneously. Seeing the code hasn't been used yet, it validates all of them before the database can update the used status.
+Because the coupon validation checks if the code has already been used, I wanted to test for the presence of a potential Time-of-Check to Time-of-Use (TOCTOU) vulnerability (also commonly known as a race condition). If multiple requests arrive at the exact same time, the server might check the database for all of them simultaneously. Seeing the code hasn't been used yet, it validates all of them before the database can update the used status.
 
 To test this, I switched to Burp Suite since Caido does not have a repeater (wishing I started with Burp to begin with). I sent the `/redeem` request to Burp's repeater, duplicated it 5 times, and grouped all of the requests together. Using Burp's parallel processing feature, I sent all 6 requests over a single connection simultaneously from a fresh account.
 

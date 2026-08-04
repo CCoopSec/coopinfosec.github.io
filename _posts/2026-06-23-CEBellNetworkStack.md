@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Exploiting the CloudEdge Bell 24T Network Stack
-subtitle: Leveraging of Insecure Communication with Cloud Backend & Mobile App
+subtitle: Leveraging Insecure Communication Between the Cloud Backend, Mobile App, and the Local IoT Device via Transparent Proxy Interception to Bypass TLS and Manipulate Plaintext HTTP Communications.
 gh-repo: chezzuhhh.github.io
 comments: true
 mathjax: true

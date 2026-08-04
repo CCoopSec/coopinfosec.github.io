@@ -1,7 +1,7 @@
 ---
 layout: post
-title: Security Posture of the CloudEdge Bell 24T Network Stack
-subtitle: Exploitation of Insecure Communication with Cloud Backend & Mobile App
+title: Exploiting the CloudEdge Bell 24T Network Stack
+subtitle: Leveraging of Insecure Communication with Cloud Backend & Mobile App
 gh-repo: chezzuhhh.github.io
 comments: true
 mathjax: true

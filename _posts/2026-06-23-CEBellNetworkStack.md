@@ -86,24 +86,17 @@ nc -u -l 16685 | ffplay -f h264 -
 
 ---
 
-#### 3. Control Plane HMAC Replay Attacks & IDOR Exposure
-
-While the cloud C2 API uses custom signing headers (`X-Ca-Key`, `X-Ca-Nonce`, `X-Ca-Timestamp`), inspection showed that the backend servers fail to validate timestamp freshness or track nonce uniqueness.
-
-An attacker can capture valid C2 API requests and replay them arbitrarily. The cloud backend accepts replayed requests without error, allowing an attacker to manipulate device operational states or execute localized Denial of Service (DoS) conditions. Furthermore, because access control relies heavily on static hardware UUIDs, modifying these identifiers within replayed payloads exposes potential Insecure Direct Object Reference (IDOR) pathways for unauthorized cross-account device manipulation.
-
----
-
-#### 4. Cleartext Media Uploads, STS Token Theft, Payload Substitution & SSRF
+#### 3. Replay Attacks, IDOR, Payload Substitution & SSRF
 
 When motion is detected or the doorbell button is pressed, the camera uploads alert imagery to an Aliyun Object Storage Service (OSS) bucket over **unencrypted HTTP (Port 80)** via `POST` and `PUT` requests.
 
-Interception of these unencrypted uploads revealed two severe flaws:
+Interception of these unencrypted uploads revealed several severe flaws:
 
-* **STS Token Exfiltration:** The request headers include a cleartext `x-oss-security-token` containing temporary Security Token Service (STS) credentials. Extracting this token grants an attacker full read/write access to the cloud storage bucket.
+* The request headers include a cleartext `x-oss-security-token` containing temporary Security Token Service (STS) credentials. Extracting this token grants an attacker full read/write access to the cloud storage bucket.
 
+* While the use of custom signing headers (`X-Ca-Key`, `X-Ca-Nonce`, `X-Ca-Timestamp`) is deployed, the backend servers fail to validate timestamp freshness or track nonce uniqueness. An attacker can capture valid API request, and replay them arbitrarily. The cloud backend accepts replayed requests without error, allowing an attacker to manipulate device operational states or execute localized Denial of Service (DoS) conditions. Furthermore, because access control relies heavily on static hardware UUIDs, modifying these identifiers within replayed payloads exposes potential Insecure Direct Object Reference (IDOR) pathways for unauthorized cross-account device manipulation.
 
-* **Payload Substitution & SSRF:** The OSS API does not perform client-side cryptographic hash validation on uploaded binaries. An attacker can intercept a legitimate image upload, substitute the binary payload with arbitrary image media, and allow it to route upstream. The backend accepts the altered file, pushing forged alert imagery to the user's mobile app. Additionally, because the `x-oss-callback` header is constructed entirely client-side, altering the `callbackUrl` parameter forces the cloud OSS backend to act as an open proxy, creating Server-Side Request Forgery (SSRF) risks against internal infrastructure.
+* The OSS API does not perform client-side cryptographic hash validation on uploaded binaries. An attacker can intercept a legitimate image upload, substitute the binary payload with arbitrary image media, and allow it to route upstream. The backend accepts the altered file, pushing forged alert imagery to the user's mobile app. Additionally, because the `x-oss-callback` header is constructed entirely client-side, altering the `callbackUrl` parameter forces the cloud OSS backend to act as an open proxy, creating Server-Side Request Forgery (SSRF) risks against internal infrastructure.
 
 ---
 

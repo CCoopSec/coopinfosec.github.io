@@ -72,7 +72,6 @@ During video session negotiation, the camera broadcasts setup configurations acr
     "port": 16685
   }
 }
-
 ```
 
 Because these SIDs exhibit critically low entropy and the ICE signaling lacks mutual authentication, an attacker on the local network can exploit a hole-punching race condition. By intercepting the plaintext JSON handshake (or crafting one and brute force the SID since the low-entropy factor) and substituting the client's destination IP address with an attacker-controlled socket IP, the doorbell is tricked into establishing the P2P stream directly with the attacker.
@@ -81,7 +80,6 @@ The unencrypted H.264 video feed can then be ingested directly on an arbitrary l
 
 ```
 nc -u -l 16685 | ffplay -f h264 -
-
 ```
 
 ---

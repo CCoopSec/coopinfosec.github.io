@@ -105,10 +105,6 @@ Interception of these unencrypted uploads revealed two severe flaws:
 
 * **Payload Substitution & SSRF:** The OSS API does not perform client-side cryptographic hash validation on uploaded binaries. An attacker can intercept a legitimate image upload, substitute the binary payload with arbitrary image media, and allow it to route upstream. The backend accepts the altered file, pushing forged alert imagery to the user's mobile app. Additionally, because the `x-oss-callback` header is constructed entirely client-side, altering the `callbackUrl` parameter forces the cloud OSS backend to act as an open proxy, creating Server-Side Request Forgery (SSRF) risks against internal infrastructure.
 
-
-<img width="1231" height="515" alt="image" src="https://github.com/user-attachments/assets/edca7bfe-7fc4-401c-9f27-9911a8654227" />
-<img width="1252" height="243" alt="image" src="https://github.com/user-attachments/assets/f63a802d-1262-43a1-965e-6eb2a930dced" />
-
 ---
 
 ## Conclusion & Mitigations

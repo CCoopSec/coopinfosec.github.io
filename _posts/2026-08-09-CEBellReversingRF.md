@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Reverse Engineering and Exploiting the Cloudedge Bell 24T Sub-GHz RF Signals
+title: Reverse Engineering and Exploiting the Cloudedge Bell 24T Sub-GHz RF Signal Communications
 subtitle: Taking Advantage of Unencrypted Static ASK/OOK Signals to Bypass Authentication and Replay/Jam Indoor Chime Triggers Using SDR.
 gh-repo: chezzuhhh.github.io
 comments: true
@@ -10,29 +10,27 @@ author: Chase Cooper
 
 ## Overview
 
-Following up on my previous vulnerability analysis on the network communication stack of the CloudEdge Bell 24T Smart Doorbell, I shifted my focus to the sub-GHz radio frequency (RF) communications between the smart doorbell unit and its paired indoor chime.
+Following up on my previous vulnerability analysis on the network communication stack of the CloudEdge Bell 24T Smart Doorbell, I shifted my focus to the sub-GHz radio frequency (RF) communications between the smart doorbell and its paired indoor chime.
 
-The control and data planes for network communication suffered from severe cryptographic failures in their API implementation, and the RF signaling mechanism was no different lacking cryptographic implementation entirely. By capturing and analyzing the raw transmission payloads, I discovered that the doorbell relies on completely static RF identifiers. This failure to implement rolling codes or cryptographic implementation (such as challenge-response protocols) allows an attacker to execute an authentication bypass by capture-replay, as well as targeted RF jamming. This completely compromises the availability and intended functionality of the device without requiring physical access.
+The control and data planes for network communication suffered from severe cryptographic failures in their API implementation, and the RF signaling mechanism was no different, lacking cryptographic implementation entirely. By capturing and analyzing the raw transmission payloads, I discovered that the doorbell relies on completely static RF identifiers. This failure to implement rolling codes or cryptographic implementation (such as challenge-response protocols) allows an attacker to execute an authentication bypass by capture-replay and targeted jamming. This completely compromises the availability and intended functionality of the device without requiring physical access.
 
-Here is a technical breakdown of how I captured, reverse-engineered, and successfully replayed the signal/payload.  
+Here is a technical breakdown of how I captured, reverse-engineered, and successfully replayed the signal/payload:  
 
 ## Signal Capture & Observation
 
-To establish a baseline, I needed to capture the raw RF transmissions generated when the doorbell button is physically pressed. I connected an RTL-SDR Blog v4 to SDR# to monitor the spectrum and isolate the operating frequencies. Doing so resulted in discovering that doorbell transmits the same payload across both the 433 MHz and 868 MHz bands.
+The first thing I needed to do was capture the raw RF transmissions generated when the doorbell button is physically pressed. I connected an RTL-SDR Blog v4 to SDR# to isolate the operating frequencies. I took the easy road here by looking up the devices data sheet to find the operating frequencies instead of manually searching the spectrum. Doing so resulted in discovering that the doorbell transmits the same payload across both the 433 MHz and 868 MHz bands. The developers likely implemented this dual-band approach to guarantee signal delivery. By broadcasting simultaneously, the device maximizes its ability to penetrate physical barriers and bypass the localized interference.
   
 ![[Pasted image 20260805153408.png]]
 _Live Fast Fourier Transform (FFT) view of 433MHz (left) & 868MHz (right) signals sent from the smart doorbell. Analyzed using SDR# + RTL-SDR._
 
-After capturing the raw I/Q data during a legitimate button press, I imported the file into Universal Radio Hacker (URH) and Inspectrum. This allowed me to visually break down the modulation and line encoding techniques utilized:
+After capturing the raw I/Q data during legitimate button presses, I imported the files into Universal Radio Hacker (URH) to view the time-domain waveforms and Inspectrum for a signal visualizer of the frequency-domain. This allowed me to visually break down the modulation and line encoding techniques utilized:
 
-By observing the time-domain waveform (using URH) and frequency-domain (using Spectrogram), it became clear the device utilizes Amplitude Shift Keying (ASK), specifically On-Off Keying (OOK). The data is transmitted using Pulse Width Modulation (PWM) with a symbol time of 1 ms, resulting in a 1000 Baud rate (1/0.001 s).
+It quickly became clear the device uses Amplitude Shift Keying (ASK), specifically On-Off Keying (OOK). When demodulating this waveform in URH, the raw data is represented using Non-Return-to-Zero (NRZ) line encoding, meaning the signal remains at its high or low state for the entire bit duration without dropping to zero. These raw NRZ bits are then grouped to form Pulse Width Modulation (PWM) symbols with a symbol time of 1 ms, resulting in a 1000 Baud rate (1/0.001 s).
 
 ![[Pasted image 20260805153916.png]]
 _Deeper look into intercepted smart doorbell RF signal using URH (top), and Inspectrum (bottom)_
 
 By decoding the waveform, I was able to map out the complete packet anatomy: the preamble, sync word, static payload, and tail. Because the payload remained static between button presses, the system is fundamentally vulnerable to replay attacks.
-
-**NON RETURN TO ZERO DECODING**
 
 ![[Pasted image 20260619130215.png]]
 ![[Pasted image 20260619130235.png]]

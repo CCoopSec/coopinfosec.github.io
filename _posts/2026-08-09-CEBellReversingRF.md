@@ -70,7 +70,7 @@ data = (
     "1000100010001000100010001000111010001000100010001000100010001"
 )
 
-transmission = data * 5
+transmission = data * 5 # since the doorbell sends this payload 5 times per press
 
 padding = len(transmission) % 8
 if padding != 0:

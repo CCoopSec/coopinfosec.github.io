@@ -49,7 +49,7 @@ With the packet anatomy and technical signal transmission parameters identified,
 - **Symbol Time:** 1 ms
 - **Symbol (Baud) Rate:** 1000 Baud (1 / 0.001)
 
-`
+```
 from rflib import *
 
 d = RfCat()
@@ -82,7 +82,7 @@ payload = int(transmission, 2).to_bytes(len(transmission) // 8, byteorder='big')
 d.makePktFLEN(len(payload))
 d.RFxmit(payload)
 d.setModeIDLE()
-`
+```
 
 I successfully crafted and transmitted a synthetic signal that perfectly replicated the doorbell's original transmission. Because the receiver does not track state or validate signal freshness, it accepted the replayed payload as a legitimate and authenticated button press.
 

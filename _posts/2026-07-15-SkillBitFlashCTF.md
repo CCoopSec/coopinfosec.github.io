@@ -78,11 +78,11 @@ With $300 now sitting in the wallet, I bypassed the intended $50 coupon limitati
 
 I was pretty excited for this challenge because at the start of summer I took it upon me to be more proactive about learning reverse engineering in my pass time. To do so, I began reading *Implementing Reverse Engineering* by Jitender Narula. This book has been incredibly helpful in understanding the x86 architecture, assembly instructions, calling conventions, and many more important topics for reverse engineering x86 binaries. So I thought this would be a perfect opportunity to apply some of the things I have been learning.
 
-To begin with, I ran `file` on the provided binary, which identified it as a stripped Linux (ELF) executable. I then attempted to trace the password comparison dynamically using `strace`.
-`strace` operates at a low level by intercepting system calls (the direct requests the program makes to the Linux kernel). `strace` provided a bit of context: it showed the program invoking `read` to capture my input and accessing `/dev/urandom` to pull a chunk of data. However, after that, it made zero system calls until it finally invoked `write` to print "Access denied."
+To begin with, I ran `file` on the provided binary, which identified it as a stripped Linux (ELF) executable. I then attempted to trace the password comparison dynamically by intercepting system calls (the direct requests the program makes to the Linux kernel) using `strace`.
+`strace` provided a bit of context: it showed the program invoking `read` to capture my input and accessing `/dev/urandom` to pull a chunk of data. However, after that it made zero system calls until it finally invoked `write` to print "Access denied."
 This confirmed that the password checking logic operates entirely within user-space memory, avoiding kernel interactions, making it invisible to dynamic system tracing tools.
 
-Realizing static analysis would result in a dead end, I dropped the binary into Ghidra to analyze the execution flow statically. I quickly identified the entry function for the process:
+I then dropped the binary into Ghidra to analyze the execution flow statically. I quickly identified the entry function for the process:
 The entry function has one function and it is a call to a function that takes a pointer to the main function as its first argument. After spending some time renaming variables and cleaning up the decompiled C pseudo-code of the main function, I realized this wasn't a standard password check. The program was running a custom Virtual Machine.
 
 The VM logic is stored as a constant array of raw bytes in `.rodata` (Read-Only Data). To execute it, the binary uses a massive `switch` statement inside a `while` loop that acts as an interpreter for each byte in the array. It reads one byte at a time, treats it as an opcode, and performs a specific action defined in the switch statement.

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Reverse Engineering and Exploiting the Cloudedge Bell 24T Sub-GHz RF Signal Communications
-subtitle: Taking Advantage of Unencrypted Static ASK/OOK Signals to Bypass Authentication and Replay/Jam Indoor Chime Triggers Using SDR.
+subtitle: Taking Advantage of Unencrypted Static ASK/OOK Payloads to Bypass Authentication and Replay/Jam Indoor Chime Triggers Using SDR.
 gh-repo: chezzuhhh.github.io
 comments: true
 mathjax: true
@@ -18,23 +18,24 @@ Here is a technical breakdown of how I captured, reverse-engineered, and success
 
 ## Signal Capture & Observation
 
-The first thing I needed to do was capture the raw RF transmissions generated when the doorbell button is physically pressed. I connected an RTL-SDR Blog v4 to SDR# to isolate the operating frequencies. I took the easy road here by looking up the devices data sheet to find the operating frequencies instead of manually searching the spectrum. Doing so resulted in discovering that the doorbell transmits the same payload across both the 433 MHz and 868 MHz bands. The developers likely implemented this dual-band approach to guarantee signal delivery. By broadcasting simultaneously, the device maximizes its ability to penetrate physical barriers and bypass the localized interference.
-  
-![[Pasted image 20260805153408.png]]
+The first thing I needed to do was capture the raw RF transmissions generated when the doorbell button is physically pressed. I connected an RTL-SDR Blog v4 to SDR# and isolated the bandwidth to the targeted operating frequencies. I took the easy road next by looking up the device’s data sheet to find the operating frequencies instead of manually searching the spectrum while continually pressing the trigger button. Doing so resulted in discovering that the doorbell transmits the same payload across both the 433 MHz and 868 MHz bands simultaneously. The developers likely implemented this dual-band approach to guarantee signal delivery. By broadcasting simultaneously, the device maximizes its ability to penetrate physical barriers and mitigate effects from local interference.
+
+
+<img width="970" height="306" alt="image" src="https://github.com/user-attachments/assets/24e63ed9-9bcf-47a7-a0b4-cfda6763ae66" />
 _Live Fast Fourier Transform (FFT) view of 433MHz (left) & 868MHz (right) signals sent from the smart doorbell. Analyzed using SDR# + RTL-SDR._
 
-After capturing the raw I/Q data during legitimate button presses, I imported the files into Universal Radio Hacker (URH) to view the time-domain waveforms and Inspectrum for a signal visualizer of the frequency-domain. This allowed me to visually break down the modulation and line encoding techniques utilized:
+After capturing the raw I/Q data during button presses, I imported the files into Universal Radio Hacker (URH) to view the time-domain waveforms and Inspectrum for a signal visualizer of the frequency-domain. This allowed me to visually break down the modulation and line encoding techniques utilized:
 
-It quickly became clear the device uses Amplitude Shift Keying (ASK), specifically On-Off Keying (OOK). When demodulating this waveform in URH, the raw data is represented using Non-Return-to-Zero (NRZ) line encoding, meaning the signal remains at its high or low state for the entire bit duration without dropping to zero. These raw NRZ bits are then grouped to form Pulse Width Modulation (PWM) symbols with a symbol time of 1 ms, resulting in a 1000 Baud rate (1/0.001 s).
+To figure out the symbol timing, I first pulled the raw capture into inspectrum. Measuring the cursor intervals across the bursts made it clear I was looking at On-Off Keying (OOK) driven by Pulse Width Modulation (PWM). From there, the math was straightforward: 
+The shortest high pulse clocked in at 1 ms, resulting with as the base slot width (1000 Baud). I then brought the file into Universal Radio Hacker (URH) and set the demodulation to NRZ with a 1 ms symbol length. This forced URH to digitize the raw carrier bursts into 1 ms time slices (⁠1⁠ for carrier present, ⁠0⁠ for silent). 
 
-![[Pasted image 20260805153916.png]]
+<img width="970" height="807" alt="image" src="https://github.com/user-attachments/assets/0acce8a6-aa29-4933-bfe7-fc1717d2269f" />
 _Deeper look into intercepted smart doorbell RF signal using URH (top), and Inspectrum (bottom)_
 
 By decoding the waveform, I was able to map out the complete packet anatomy: the preamble, sync word, static payload, and tail. Because the payload remained static between button presses, the system is fundamentally vulnerable to replay attacks.
 
-![[Pasted image 20260619130215.png]]
-![[Pasted image 20260619130235.png]]
-_Detailed look into the static payload across 5 transmissions using URH. Note the complete lack of variance across multiple triggers._
+<img width="977" height="438" alt="image" src="https://github.com/user-attachments/assets/9f4242b6-add2-4c2f-95fb-abe999b827f5" />
+Detailed look into the static payload across 5 transmissions using URH showcasing the complete lack of variance across multiple triggers.
 
 ## Exploiting the Replay Attack and Signal Jamming
 

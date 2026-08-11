@@ -78,23 +78,19 @@ With $300 now sitting in the wallet, I bypassed the intended $50 coupon limitati
 
 I was pretty excited for this challenge because at the start of summer I took it upon me to be more proactive about learning reverse engineering in my pass time. To do so, I began reading *Implementing Reverse Engineering* by Jitender Narula. This book has been incredibly helpful in understanding the x86 architecture, assembly instructions, calling conventions, and many more important topics for reverse engineering x86 binaries. So I thought this would be a perfect opportunity to apply some of the things I have been learning.
 
-To begin with, I ran `file` on the provided binary, which identified it as a stripped Linux (ELF) executable. I then attempted to trace the password comparison dynamically using `ltrace` and `strace`.
-I started with `ltrace`, which intercepts calls made to shared user-space libraries (like `strcmp` or `printf` from libc). It failed immediately with the error `Couldn't find .dynsym or .dynstr`. This confirmed the binary was statically linked, meaning the compiler burned all standard C functions directly into the executable rather than loading them dynamically at runtime.
-Next, I used `strace`, which operates at a lower level by intercepting system calls (the direct requests the program makes to the Linux kernel). `strace` provided a bit more context: it showed the program invoking `read` to capture my input and accessing `/dev/urandom` to pull a chunk of data. However, after that, it made zero system calls until it finally invoked `write` to print "Access denied."
-This confirmed that the password checking logic operates entirely within user-space memory, avoiding shared library functions or kernel interactions, making it invisible to dynamic system tracing tools.
+To begin with, I ran `file` on the provided binary, which identified it as a stripped Linux (ELF) executable. I then attempted to trace the password comparison dynamically using `strace`.
+`strace` operates at a low level by intercepting system calls (the direct requests the program makes to the Linux kernel). `strace` provided a bit of context: it showed the program invoking `read` to capture my input and accessing `/dev/urandom` to pull a chunk of data. However, after that, it made zero system calls until it finally invoked `write` to print "Access denied."
+This confirmed that the password checking logic operates entirely within user-space memory, avoiding kernel interactions, making it invisible to dynamic system tracing tools.
 
-Realizing this was a dead end, I dropped the binary into Ghidra to analyze the execution flow statically. I quickly identified the entry function for the process:
-
-<img width="883" height="458" alt="image" src="https://github.com/user-attachments/assets/fe5e23ea-1cfd-44b6-ab5d-993508b1cfc1" />
-
-There is a call to `FUN_00404260`, which takes a pointer to `FUN_00401880` as its first argument (this is the process's `main` function). After spending some time renaming variables and cleaning up the decompiled C pseudo-code of the main function, I realized this wasn't a standard password check. The program was running a custom Virtual Machine.
+Realizing static analysis would result in a dead end, I dropped the binary into Ghidra to analyze the execution flow statically. I quickly identified the entry function for the process:
+The entry function has one function and it is a call to a function that takes a pointer to the main function as its first argument. After spending some time renaming variables and cleaning up the decompiled C pseudo-code of the main function, I realized this wasn't a standard password check. The program was running a custom Virtual Machine.
 
 The VM logic is stored as a constant array of raw bytes in `.rodata` (Read-Only Data). To execute it, the binary uses a massive `switch` statement inside a `while` loop that acts as an interpreter for each byte in the array. It reads one byte at a time, treats it as an opcode, and performs a specific action defined in the switch statement.
 
 Because the VM is designed to work with custom opcodes in a stack architecture, there is no need for general-purpose registers. Without registers to track, I had to map out how the custom instructions defined in the `switch` statement manipulated the programs memory directly:
-- **The Stack:** The VM operates on a fixed 63-byte array (`byte VMStack [63]`). An integer `stackPointer` tracks the current top of the stack.
-- **Fetching:** The program bounds-checks the instruction pointer (`if (0x3c < nextIP)`) to ensure it doesn't read past the 60-byte bytecode array. It fetches the next byte into `currentOpcode` and loops back to the top.
-- **Decode/Execute:** The `switch(currentOpcode)` block decodes the instruction to be executed, with almost every operation interacting directly with `VMStack`.
+- The VM operates on a fixed 63-byte array (`byte VMStack [63]`). An integer `stackPointer` tracks the current top of the stack.
+- The program bounds-checks the instruction pointer (`if (0x3c < nextIP)`) to ensure it doesn't read past the 60-byte bytecode array. It fetches the next byte into `currentOpcode` and loops back to the top.
+- The `switch(currentOpcode)` block decodes the instruction to be executed, with almost every operation interacting directly with `VMStack`.
 
 | **Opcode** | **Name**   | **Purpose**                                                     |
 | ---------- | ---------- | --------------------------------------------------------------- |
@@ -122,7 +118,56 @@ Because the VM is designed to work with custom opcodes in a stack architecture, 
 | **0x37**   | `RND`      | Pushes a random byte (from `/dev/urandom` or PRNG fallback)     |
 | **0x3F**   | `HALT`     | Terminates VM execution and checks the success flag             |
 
-With the instruction manual for the custom CPU fully mapped out, my next step was to figure out what program the VM was actually running. By translating the raw `.rodata` bytecode array into human-readable assembly using my opcode table, the program naturally split into two distinct phases.
+With the instruction manual for the custom CPU fully mapped out, my next step was to figure out what program the VM was actually running. By translating the raw `.rodata` bytecode array into human-readable assembly using my opcode table, the program split into two distinct phases.
+
+```
+; noise prologue: random benign work driven by /dev/urandom
+0000 RND ; n = random byte (loop count)
+0001 DUP
+0002 JZ 0x001f ; n == 0 -> done
+0005 RND ; r = random byte
+0006 DUP
+0007 AND 1
+0009 JZ 0x0014 ; even -> the other op-chain
+000c RND ; odd: r ^ random, rotate, discard
+000d XOR
+000e ROL 3
+0010 POP
+0011 JMP 0x0019
+0014 RND ; even: r + random, mask, discard
+0015 ADD
+0016 AND 63
+0018 POP
+0019 PUSH 1
+001b SUB ; n--
+001c JMP 0x0001
+001f POP ; drop the spent counter
+
+; the check
+0020 GETI ; push i
+0021 LDIN ; push input[i]
+0022 GETI ; push i
+0023 AND 7 ; i & 7
+0025 LDK ; push KTAB[i & 7]
+0026 XOR ; input[i] ^ KTAB[i & 7]
+0027 GETI
+0028 ADD ; + i
+0029 ROL 3 ; rol8(.., 3)
+002b GETI
+002c LDT ; push TGT[i]
+002d NEQ ; (transformed != TGT[i]) -> 0/1
+002e ORA ; acc |= mismatch (no early-out)
+002f INCI ; i++
+0030 GETI
+0031 LEN
+0032 NEQ ; (i != len) ?
+0033 JNZ 0x0020 ; not done -> loop (always runs len times)
+0036 GETA ; push acc
+0037 JNZ 0x003b ; any byte differed -> reject
+003a HALT ; acc == 0 -> accepted
+003b FAIL ; reject
+003c HALT
+```
 
 The first block of the VM explains why dynamic tracing tools failed. It uses an `RND` (random) opcode to pull bytes from `/dev/urandom`, loops a random number of times, and executes pointless bitwise operations.
 This is considered a *noise prologue* and it is used to throw off dynamic analysis and could act as a dead end for static analysis. However, looking closely at the prologue shows it never touches the input array, the index register, or the accumulator. Once I realized it was just junk, I completely ignored it.

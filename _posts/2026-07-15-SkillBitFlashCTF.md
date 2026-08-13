@@ -119,54 +119,7 @@ Translating the .rodata bytecode array into human-readable assembly revealed two
 * Phase 2: The core validation loop transforms each byte of the user input and compares it to a target table. The VM does not exit early on a failed byte. Instead, it uses a bitwise OR instruction to record mismatches into an accumulator, ensuring the loop always runs for the full length. This constant-time execution prevents timing-based side-channel attacks. By following the stack operations based on their memory address, I was able to translate the bytecode into a single formula. For each byte of the user input, the VM performs the following transformation:
 	- `rol8((input[i] ^ KTAB[i & 7]) + i, 3) == TGT[i]`
 
-```
-; Noise prologue driven by /dev/urandom
-0000 RND 
-0001 DUP
-0002 JZ 0x001f 
-0005 RND 
-0006 DUP
-0007 AND 1
-0009 JZ 0x0014 
-000c RND 
-000d XOR
-000e ROL 3
-0010 POP
-0011 JMP 0x0019
-0014 RND 
-0015 ADD
-0016 AND 63
-0018 POP
-0019 PUSH 1
-001b SUB
-001c JMP 0x0001
-001f POP 
-
-; Password check
-0020 GETI 
-0021 LDIN 
-0022 GETI 
-0023 AND 7 
-0025 LDK 
-0026 XOR 
-0027 GETI
-0028 ADD 
-0029 ROL 3
-002b GETI
-002c LDT 
-002d NEQ 
-002e ORA 
-002f INCI 
-0030 GETI
-0031 LEN
-0032 NEQ 
-0033 JNZ 0x0020 
-0036 GETA 
-0037 JNZ 0x003b 
-003a HALT 
-003b FAIL 
-003c HALT
-```
+<img width="578" height="967" alt="image" src="https://github.com/user-attachments/assets/2bbf075c-0fde-4183-aa92-c501f5663c92" />
 
 Now I had to reverse the algorithm for the check.
 

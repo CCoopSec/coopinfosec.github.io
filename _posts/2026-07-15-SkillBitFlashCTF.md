@@ -247,13 +247,23 @@ To automate this, I wrote a quick Python script that skips the 12-byte nonce pre
 
 <img width="1087" height="491" alt="image" src="https://github.com/user-attachments/assets/e12354ca-64ae-4d71-bf7e-2764c29095c9" />
 
-Now that I have the master keystream in `keystream.bin`, I just needed to reverse the `SelectWindow` logic to find the correct offset for the target file and strip out the appended junk data.
+Now that I have the master keystream in `keystream.bin`, I just needed to reverse the `SelectWindow` logic to find the correct offset for files smaller than 4MB, since they don't start encrypting at the beginning of the  file (byte 0). 
 
-I knew `SelectWindow` calculated the starting offset for files under 4MB by hashing `Environment.MachineName` (which the logs showed was `WIN10`). I wrote **ONE FINAL** Python decryption script to handle the offset, strip the 16 bytes of random junk the malware appends to the end of the chunk, and XOR the data back to its original state:
+Instead of storing the offset inside the file (which leaves clues), they generated the offset using something unique to the computer: Environment.MachineName (which the logs showed was WIN10).
+1. SelectWindow takes the hostname (WIN10).
+2. It hashes that name to get an integer.
+3. It uses math on that integer (usually a modulo operation like hash % (4MB - file_size)) to pick a starting index inside the 4MB keystream.
+
+Because Environment.MachineName doesn't change, the malware calculates the exact same starting offset for small files on WIN10, every time.
 
 <img width="1046" height="938" alt="image" src="https://github.com/user-attachments/assets/88154cad-e1f2-4aaf-bdee-4f1684157b4c" />
 
-Running the script against `Flag.enc.pdf` combined with `keystream.bin` successfully stripped the obfuscation and applied the correct keystream window. `Flag.pdf` opened perfectly, revealing a QR code that decoded to the final flag.
+Because VESTIGE.enc.pdf was larger than 4MB and therefore defaulted to offset 0, I was able to successfully dump the entire 4MB master keystream. Which allowed the final python script to stepped into the shoes of the ransomware's decryptor:
+1. It looked at Flag.enc.pdf (a small file).
+2. It ran the WIN10 machine name through the exact same logic the SelectWindow function used.
+3. This told your script: "Ah, for this computer, the malware started encrypting small files at byte X of the master keystream." 
+
+The script applied that offset, skipped the 12-byte nonce, stripped the 16 bytes of junk data at the end, and XORed the ciphertext against the master keystream starting from that exact position. Running the script against `Flag.enc.pdf` combined with `keystream.bin` successfully stripped the obfuscation and applied the correct keystream window. `Flag.pdf` opened perfectly, revealing a QR code that decoded to the final flag.
 
 <img width="882" height="605" alt="image" src="https://github.com/user-attachments/assets/7eb81f45-0190-4df2-ad2f-954677d4b2fd" />
 

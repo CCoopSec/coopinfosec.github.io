@@ -78,19 +78,13 @@ With $300 now sitting in the wallet, I bypassed the intended $50 coupon limitati
 
 I was pretty excited for this challenge because at the start of summer I took it upon me to be more proactive about learning reverse engineering in my pass time. To do so, I began reading *Implementing Reverse Engineering* by Jitender Narula. This book has been incredibly helpful in understanding the x86 architecture, assembly instructions, calling conventions, and many more important topics for reverse engineering x86 binaries. So I thought this would be a perfect opportunity to apply some of the things I have been learning.
 
-To begin with, I ran `file` on the provided binary, which identified it as a stripped Linux (ELF) executable. I then attempted to trace the password comparison dynamically by intercepting system calls (the direct requests the program makes to the Linux kernel) using `strace`.
-`strace` provided a bit of context: it showed the program invoking `read` to capture my input and accessing `/dev/urandom` to pull a chunk of data. However, after that it made zero system calls until it finally invoked `write` to print "Access denied."
-This confirmed that the password checking logic operates entirely within user-space memory, avoiding kernel interactions, making it invisible to dynamic system tracing tools.
+Running file on the binary identified it as a stripped Linux ELF executable. Dynamic analysis using strace showed initial system calls (read for user input, and a pull from /dev/urandom), followed by a write call printing "Access denied." The absence of system calls during the validation phase confirmed the password checking logic operates entirely within user-space memory, rendering dynamic OS tracing ineffective.
 
-I then dropped the binary into Ghidra to analyze the execution flow statically. I quickly identified the entry function for the process:
-The entry function has one function and it is a call to a function that takes a pointer to the main function as its first argument. After spending some time renaming variables and cleaning up the decompiled C pseudo-code of the main function, I realized this wasn't a standard password check. The program was running a custom Virtual Machine.
+Static analysis in Ghidra revealed the binary does not use a standard password check, instead it implements a custom Virtual Machine.
 
-The VM logic is stored as a constant array of raw bytes in `.rodata` (Read-Only Data). To execute it, the binary uses a massive `switch` statement inside a `while` loop that acts as an interpreter for each byte in the array. It reads one byte at a time, treats it as an opcode, and performs a specific action defined in the switch statement.
+The VM instructions (bytecode) are stored as a constant array of raw bytes in the .rodata section. The binary uses a while loop containing a massive switch statement to act as the interpreter which fetches a byte, decodes it as an opcode, and executes the corresponding instruction.
 
-Because the VM is designed to work with custom opcodes in a stack architecture, there is no need for general-purpose registers. Without registers to track, I had to map out how the custom instructions defined in the `switch` statement manipulated the programs memory directly:
-- The VM operates on a fixed 63-byte array (`byte VMStack [63]`). An integer `stackPointer` tracks the current top of the stack.
-- The program bounds-checks the instruction pointer (`if (0x3c < nextIP)`) to ensure it doesn't read past the 60-byte bytecode array. It fetches the next byte into `currentOpcode` and loops back to the top.
-- The `switch(currentOpcode)` block decodes the instruction to be executed, with almost every operation interacting directly with `VMStack`.
+Because the VM uses a stack-based architecture rather than general-purpose registers, I mapped out the custom instruction set by analyzing each switch case and how it manipulated the 63-byte memory stack:
 
 | **Opcode** | **Name**   | **Purpose**                                                     |
 | ---------- | ---------- | --------------------------------------------------------------- |
@@ -118,64 +112,61 @@ Because the VM is designed to work with custom opcodes in a stack architecture, 
 | **0x37**   | `RND`      | Pushes a random byte (from `/dev/urandom` or PRNG fallback)     |
 | **0x3F**   | `HALT`     | Terminates VM execution and checks the success flag             |
 
-With the instruction manual for the custom CPU fully mapped out, my next step was to figure out what program the VM was actually running. By translating the raw `.rodata` bytecode array into human-readable assembly using my opcode table, the program split into two distinct phases.
+Translating the .rodata bytecode array into human-readable assembly revealed two distinct phases:
+
+* Phase 1: The VM uses the RND opcode to pull bytes from /dev/urandom, executing a random number of loops containing pointless bitwise operations. This acts as an anti-analysis technique to add noise to dynamic traces. Since it never touches the input array or accumulator, I ignored it entirely.
+
+* Phase 2: The core validation loop transforms each byte of the user input and compares it to a target table. The VM does not exit early on a failed byte. Instead, it uses a bitwise OR instruction to record mismatches into an accumulator, ensuring the loop always runs for the full length. This constant-time execution prevents timing-based side-channel attacks. By following the stack operations based on their memory address, I was able to translate the bytecode into a single formula. For each byte of the user input, the VM performs the following transformation:
+	- `rol8((input[i] ^ KTAB[i & 7]) + i, 3) == TGT[i]`
 
 ```
-; noise prologue: random benign work driven by /dev/urandom
-0000 RND ; n = random byte (loop count)
+; Noise prologue driven by /dev/urandom
+0000 RND 
 0001 DUP
-0002 JZ 0x001f ; n == 0 -> done
-0005 RND ; r = random byte
+0002 JZ 0x001f 
+0005 RND 
 0006 DUP
 0007 AND 1
-0009 JZ 0x0014 ; even -> the other op-chain
-000c RND ; odd: r ^ random, rotate, discard
+0009 JZ 0x0014 
+000c RND 
 000d XOR
 000e ROL 3
 0010 POP
 0011 JMP 0x0019
-0014 RND ; even: r + random, mask, discard
+0014 RND 
 0015 ADD
 0016 AND 63
 0018 POP
 0019 PUSH 1
-001b SUB ; n--
+001b SUB
 001c JMP 0x0001
-001f POP ; drop the spent counter
+001f POP 
 
-; the check
-0020 GETI ; push i
-0021 LDIN ; push input[i]
-0022 GETI ; push i
-0023 AND 7 ; i & 7
-0025 LDK ; push KTAB[i & 7]
-0026 XOR ; input[i] ^ KTAB[i & 7]
+; Password check
+0020 GETI 
+0021 LDIN 
+0022 GETI 
+0023 AND 7 
+0025 LDK 
+0026 XOR 
 0027 GETI
-0028 ADD ; + i
-0029 ROL 3 ; rol8(.., 3)
+0028 ADD 
+0029 ROL 3
 002b GETI
-002c LDT ; push TGT[i]
-002d NEQ ; (transformed != TGT[i]) -> 0/1
-002e ORA ; acc |= mismatch (no early-out)
-002f INCI ; i++
+002c LDT 
+002d NEQ 
+002e ORA 
+002f INCI 
 0030 GETI
 0031 LEN
-0032 NEQ ; (i != len) ?
-0033 JNZ 0x0020 ; not done -> loop (always runs len times)
-0036 GETA ; push acc
-0037 JNZ 0x003b ; any byte differed -> reject
-003a HALT ; acc == 0 -> accepted
-003b FAIL ; reject
+0032 NEQ 
+0033 JNZ 0x0020 
+0036 GETA 
+0037 JNZ 0x003b 
+003a HALT 
+003b FAIL 
 003c HALT
 ```
-
-The first block of the VM explains why dynamic tracing tools failed. It uses an `RND` (random) opcode to pull bytes from `/dev/urandom`, loops a random number of times, and executes pointless bitwise operations.
-This is considered a *noise prologue* and it is used to throw off dynamic analysis and could act as a dead end for static analysis. However, looking closely at the prologue shows it never touches the input array, the index register, or the accumulator. Once I realized it was just junk, I completely ignored it.
-
-Moving past the noise, I isolated the actual password-checking loop. By following the stack operations based on their memory address, I was able to translate the bytecode into a single formula:
-- For each byte of the user input, the VM performs the following transformation:
-	- `rol8((input[i] ^ KTAB[i & 7]) + i, 3) == TGT[i]`
-One really interesting feature of this loop is how it handles failures. If a byte is wrong, the VM does not exit early. It uses an `ORA` (bitwise OR) opcode to record the error into an accumulator register and continues checking the rest of the string. Which makes it always run for the full length of the expected input. Meaning a wrong guess on any byte takes the exact same amount of time and instructions as a wrong guess on any other byte. This constant-time execution makes brute-forcing another dead end.
 
 Now I had to reverse the algorithm for the check.
 

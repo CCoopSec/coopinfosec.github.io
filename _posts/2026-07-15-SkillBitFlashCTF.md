@@ -82,7 +82,7 @@ Running file on the binary identified it as a stripped Linux ELF executable. Dyn
 
 Static analysis in Ghidra revealed the binary does not use a standard password check, instead it implements a custom Virtual Machine.
 
-The VM instructions (bytecode) are stored as a constant array of raw bytes in the .rodata section. The binary uses a while loop containing a massive switch statement to act as the interpreter which fetches a byte, decodes it as an opcode, and executes the corresponding instruction.
+The VM instructions (bytecode) are stored as a constant array of raw bytes in the .rodata section (Memory Address: `0x00485a60`). The binary uses a while loop containing a massive switch statement to act as the interpreter which fetches a byte, decodes it as an opcode, and executes the corresponding instruction.
 
 Because the VM uses a stack-based architecture rather than general-purpose registers, I mapped out the custom instruction set by analyzing each switch case and how it manipulated the 63-byte memory stack:
 

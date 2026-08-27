@@ -3,7 +3,7 @@
 Here is my resume
 
 <embed
-  src="{{ '/assets/img/Resume.pdf' | relative_url }}"
+  src="{{ '/assets/img/Chase'sResume.pdf' | relative_url }}"
   type="application/pdf"
   width="100%"
   height="800px"

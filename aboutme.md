@@ -1,5 +1,10 @@
 # **[System.Security.Principal.WindowsIdentity]::GetCurrent().ChaseCooper**
 
-More information about me
+Here is my resume
 
-<embed src="/assets/img/ChaseCoopersResume.pdf" type="application/pdf" width="100%" height="800px" /> 
+<embed
+  src="{{ '/assets/img/Resume.pdf' | relative_url }}"
+  type="application/pdf"
+  width="100%"
+  height="800px"
+/>

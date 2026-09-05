@@ -41,8 +41,8 @@ This plane is responsible for high-bandwidth real-time video/audio streaming and
 
 When I triggered the motion sensor or rang the doorbell, the device took a picture and sent the image to a cloud OSS bucket (a data container that media gets dumped to), happening in unencrypted HTTP POST & PUT requests. The picture is then fetched and combined with some other data to be passed to the mobile app in an alert/phone notification. By extracting and analyzing the requests, I discovered the device transmits an x-oss-callback header when motion is detected. Decoding this Base64 string presented a JSON payload exposing the userID, deviceID (same UUID as before), and event metadata. Worse, the request included an x-oss-security-token (temporary Security Token Service (STS) credentials). 
 
-<img width="1231" height="515" alt="image" src="https://github.com/user-attachments/assets/edca7bfe-7fc4-401c-9f27-9911a8654227" />
-<img width="1252" height="243" alt="image" src="https://github.com/user-attachments/assets/f63a802d-1262-43a1-965e-6eb2a930dced" />
+<img width="931" height="647" alt="image" src="https://github.com/user-attachments/assets/a21e7490-a084-4474-b1cc-a1cf3e314a55" />
+<img width="975" height="317" alt="image" src="https://github.com/user-attachments/assets/2c680a42-7ee7-4b0e-825d-dfa6d6f1c6bb" />
 
 #### Control Plane
 This plane consists of a TLS v1.2/1.3 tunnel which is responsible for handling critical C2 actions to and from the cloud (e.g., Delete Device, alter state/functionality, initiate a live video feed).

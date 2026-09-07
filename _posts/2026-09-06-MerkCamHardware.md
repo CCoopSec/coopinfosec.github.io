@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Hardware Hacking the Merkury MI-CW051 IP Camera using Physical Attack Surfaces and Firmware Vulnerabilities
+title: Hardware Hacking the Merkury MI-CW051 IP Camera
 subtitle: Reverse Engineering the PCB, Accessing Exposed Debug Pads, Bypassing Bootloaders, Chip-Off Firmware Extraction, Static Analysis in Ghidra, and Uncovering Cryptographic Vulnerabilities.
 gh-repo: chezzuhhh.github.io
 comments: true
